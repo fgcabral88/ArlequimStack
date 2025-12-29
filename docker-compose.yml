@@ -1,0 +1,86 @@
+version: '3.9'
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sports-mysql
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: Database@2026*
+      MYSQL_DATABASE: sports_equipment_db
+      MYSQL_ROOT_HOST: '%'
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pDatabase@2026*"]
+      timeout: 20s
+      retries: 10
+      interval: 5s
+      start_period: 30s
+    networks:
+      - sports-network
+  
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: sports-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      timeout: 20s
+      retries: 10
+      interval: 5s
+      start_period: 30s
+    networks:
+      - sports-network
+  
+  jaeger:
+    image: jaegertracing/all-in-one:1.41
+    container_name: sports-jaeger
+    ports:
+      - "6831:6831/udp"
+      - "16686:16686"
+    networks:
+      - sports-network
+  
+  api:
+    build:
+      context: .
+      dockerfile: SportsEquipment.Api/Dockerfile
+    container_name: sports-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=sports_equipment_db;User=root;Password=Database@2026*;
+      - RabbitMq__Uri=rabbitmq://rabbitmq
+      - RabbitMq__User=guest
+      - RabbitMq__Password=guest
+      - Jwt__Secret=f6a467687223f18bdb6dbfe86352fcc9b28171dffa64049fb4efa19215c2874b
+      - Jwt__Issuer=SportsEquipment.Api
+      - Jwt__Audience=SportsEquipment.Client
+      - Jwt__ExpiryMinutes=60
+      - Jaeger__Enabled=false
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - sports-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  sports-network:
+    driver: bridge
